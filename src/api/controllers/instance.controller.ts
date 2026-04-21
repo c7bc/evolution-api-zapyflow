@@ -7,7 +7,7 @@ import { CacheService } from '@api/services/cache.service';
 import { WAMonitoringService } from '@api/services/monitor.service';
 import { SettingsService } from '@api/services/settings.service';
 import { Events, Integration, wa } from '@api/types/wa.types';
-import { Auth, Chatwoot, ConfigService, HttpServer, WaBusiness } from '@config/env.config';
+import { Auth, Chatwoot, ConfigService, Database, HttpServer, WaBusiness } from '@config/env.config';
 import { Logger } from '@config/logger.config';
 import { BadRequestException, InternalServerErrorException, UnauthorizedException } from '@exceptions';
 import { delay } from 'baileys';
@@ -300,12 +300,12 @@ export class InstanceController {
         },
       };
     } catch (error) {
-      // ZapyFlow patch: during WHATSAPP_BUSINESS (Cloud API) boot, the Evolution
-      // ChatbotController pipeline may fire for messages already queued by Meta,
-      // and the dependent tables (Setting, Webhook, IntegrationSession) haven't
-      // been populated yet — causing PrismaClientKnownRequestError P2003 (FK).
-      // The Instance row IS created before the error is thrown, so we accept the
-      // create as successful and let the async pipeline retry harmlessly.
+      // ZAPYFLOW: WHATSAPP_BUSINESS boot dispara o ChatbotController pipeline
+      // com mensagens pending da Meta antes das tabelas dependentes (Setting,
+      // Webhook, IntegrationSession) estarem populadas — daí FK P2003.
+      // Em vez de silenciar retornando sucesso mentiroso (instance podia nem
+      // estar persistida), reconciliamos: upsert Instance + Setting no Prisma,
+      // garantindo que Message.create e chamadas subsequentes não quebrem.
       // See: https://github.com/EvolutionAPI/evolution-api/issues/2423
       const isFkViolationDuringCloudBoot =
         instanceData.integration === Integration.WHATSAPP_BUSINESS &&
@@ -316,19 +316,66 @@ export class InstanceController {
 
       if (isFkViolationDuringCloudBoot) {
         this.logger.warn(
-          `[zapyflow] Ignoring FK violation during Cloud API instance boot for ${instanceData.instanceName}: ${isArray(error.message) ? error.message[0] : error.message}`,
+          `[zapyflow] FK violation during Cloud API boot for ${instanceData.instanceName}, reconciling DB state...`,
         );
-        // Instance is persisted; return a minimal response so the client knows
-        // the create succeeded. Downstream reconciliation happens via webhook.
-        return {
-          instance: {
-            instanceName: instanceData.instanceName,
-            instanceId: instanceData.instanceId,
-            integration: instanceData.integration,
-            status: 'created',
-          },
-          hash: instanceData.token,
-        };
+
+        try {
+          const clientName = await this.configService.get<Database>('DATABASE').CONNECTION.CLIENT_NAME;
+
+          // Garante que a Instance está no Postgres com o mesmo instanceId
+          // que já foi atribuído em memória (linha 53 do createInstance).
+          await this.prismaRepository.instance.upsert({
+            where: { name: instanceData.instanceName },
+            create: {
+              id: instanceData.instanceId,
+              name: instanceData.instanceName,
+              connectionStatus: 'open',
+              number: instanceData.number,
+              integration: Integration.WHATSAPP_BUSINESS,
+              token: (instanceData as any).token ?? null,
+              businessId: instanceData.businessId,
+              clientName,
+            },
+            update: {
+              connectionStatus: 'open',
+              number: instanceData.number,
+              integration: Integration.WHATSAPP_BUSINESS,
+              businessId: instanceData.businessId,
+            },
+          });
+
+          // Setting stub pra pipeline de chatbot não violar FK subsequentes.
+          await this.prismaRepository.setting.upsert({
+            where: { instanceId: instanceData.instanceId },
+            create: {
+              instanceId: instanceData.instanceId,
+              rejectCall: false,
+              groupsIgnore: true,
+              alwaysOnline: false,
+              readMessages: false,
+              readStatus: false,
+              syncFullHistory: false,
+            },
+            update: {},
+          });
+
+          this.logger.log(`[zapyflow] DB reconciled for ${instanceData.instanceName} (id: ${instanceData.instanceId})`);
+
+          return {
+            instance: {
+              instanceName: instanceData.instanceName,
+              instanceId: instanceData.instanceId,
+              integration: Integration.WHATSAPP_BUSINESS,
+              status: 'created',
+            },
+            hash: (instanceData as any).token,
+          };
+        } catch (reconcileError: any) {
+          this.logger.error(
+            `[zapyflow] DB reconcile failed for ${instanceData.instanceName}: ${reconcileError?.message ?? reconcileError}`,
+          );
+          // fall through pro erro normal abaixo
+        }
       }
 
       this.waMonitor.deleteInstance(instanceData.instanceName);
