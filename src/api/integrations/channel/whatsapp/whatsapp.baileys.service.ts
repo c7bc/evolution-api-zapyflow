@@ -40,6 +40,7 @@ import {
   SendAudioDto,
   SendButtonsDto,
   SendContactDto,
+  SendInteractiveDto,
   SendListDto,
   SendLocationDto,
   SendMediaDto,
@@ -5152,9 +5153,142 @@ export class BaileysStartupService extends ChannelStartupService {
     throw new BadRequestException('Address request messages require WhatsApp Cloud API');
   }
   public async carouselMessage(data: any) {
-    void data;
-    throw new BadRequestException(
-      'Carousel messages require WhatsApp Cloud API (or use /sendCarousel via fork for native_flow)',
-    );
+    // SendCarouselDto: { number, cards[{imageUrl,title,body,buttons[]}] }
+    // Cada card vira uma mensagem separada interactiveMessage com nativeFlow.
+    // Meta não tem carousel sem template, mas Baileys renderiza sequência de
+    // cards via viewOnceMessage > interactiveMessage com header media + native_flow.
+    const { number, cards } = data ?? {};
+    if (!Array.isArray(cards) || cards.length === 0) {
+      throw new BadRequestException('At least one card is required');
+    }
+
+    const results = [];
+    for (const card of cards) {
+      const buttons = (card.buttons ?? []).map((b: any) => ({
+        name: this.carouselTypeToNativeFlow(b.type),
+        buttonParamsJson: JSON.stringify(this.carouselButtonParams(b)),
+      }));
+
+      let header: any = undefined;
+      if (card.imageUrl) {
+        const generated = await this.prepareMediaMessage({
+          mediatype: 'image',
+          media: card.imageUrl,
+        });
+        if (generated?.message?.imageMessage) {
+          header = {
+            hasMediaAttachment: true,
+            imageMessage: generated.message.imageMessage,
+          };
+        }
+      }
+
+      const message: proto.IMessage = {
+        viewOnceMessage: {
+          message: {
+            interactiveMessage: {
+              body: {
+                text: `*${card.title}*\n\n${card.body}`,
+              },
+              header,
+              nativeFlowMessage: {
+                buttons,
+                messageParamsJson: JSON.stringify({ from: 'api', templateId: v4() }),
+              },
+            },
+          },
+        },
+      };
+
+      const sent = await this.sendMessageWithTyping(number, message, {
+        delay: data?.delay,
+        presence: 'composing',
+      });
+      results.push(sent);
+    }
+    return results;
+  }
+
+  /**
+   * Native interactive com native_flow buttons (11 types). Baileys fork core —
+   * mapeia direto `buttons[{name, parameters}]` pros binary nodes via
+   * relayMessage additionalNodes. Cobre quick_reply, cta_url, cta_copy,
+   * cta_call, cta_reminder, cta_cancel_reminder, cta_catalog, single_select,
+   * address_message, send_location, open_webview.
+   */
+  public async interactiveMessage(data: SendInteractiveDto) {
+    if (!data.buttons || data.buttons.length === 0) {
+      throw new BadRequestException('At least one button is required');
+    }
+
+    const nativeButtons = data.buttons.map((b) => ({
+      name: b.name,
+      buttonParamsJson: JSON.stringify(b.parameters ?? {}),
+    }));
+
+    let header: any = undefined;
+    if (data.headerMedia?.url) {
+      const generated = await this.prepareMediaMessage({
+        mediatype: data.headerMedia.type === 'document' ? 'document' : data.headerMedia.type,
+        media: data.headerMedia.url,
+      });
+      const keyMap: Record<string, string> = {
+        image: 'imageMessage',
+        video: 'videoMessage',
+        document: 'documentMessage',
+      };
+      const mediaKey = keyMap[data.headerMedia.type];
+      if (generated?.message?.[mediaKey as keyof typeof generated.message]) {
+        header = {
+          hasMediaAttachment: true,
+          [mediaKey]: generated.message[mediaKey as keyof typeof generated.message],
+        };
+      }
+    } else if (data.header) {
+      header = { title: data.header };
+    }
+
+    const message: proto.IMessage = {
+      viewOnceMessage: {
+        message: {
+          interactiveMessage: {
+            body: { text: data.body },
+            footer: data.footer ? { text: data.footer } : undefined,
+            header,
+            nativeFlowMessage: {
+              buttons: nativeButtons,
+              messageParamsJson: JSON.stringify({ from: 'api', templateId: v4() }),
+            },
+          },
+        },
+      },
+    };
+
+    return await this.sendMessageWithTyping(data.number, message, {
+      delay: (data as any)?.delay,
+      presence: 'composing',
+    });
+  }
+
+  private carouselTypeToNativeFlow(type: string): string {
+    const map: Record<string, string> = {
+      quick_reply: 'quick_reply',
+      url: 'cta_url',
+      call: 'cta_call',
+      copy: 'cta_copy',
+      catalog: 'cta_catalog',
+      webview: 'open_webview',
+    };
+    return map[type] ?? 'quick_reply';
+  }
+
+  private carouselButtonParams(b: any): Record<string, any> {
+    if (b.type === 'quick_reply') return { display_text: b.label, id: b.id ?? b.label };
+    if (b.type === 'url') return { display_text: b.label, url: b.url };
+    if (b.type === 'call') return { display_text: b.label, phone_number: b.phone };
+    if (b.type === 'copy') return { display_text: b.label, copy_code: b.copyCode };
+    if (b.type === 'catalog') return { display_text: b.label };
+    if (b.type === 'webview') return { display_text: b.label, url: b.url };
+    return { display_text: b.label };
   }
 }

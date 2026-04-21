@@ -10,6 +10,7 @@ import {
   SendCatalogDto,
   SendContactDto,
   SendFlowDto,
+  SendInteractiveDto,
   SendListDto,
   SendLocationDto,
   SendLocationRequestDto,
@@ -1941,5 +1942,47 @@ export class BusinessStartupService extends ChannelStartupService {
       'Carousel messages require an approved Meta Carousel Template. ' +
         'Outside a template, use product_list or product_single. Caller should fall back to numbered text.',
     );
+  }
+
+  /**
+   * Native interactive with native_flow buttons. Cloud API suporta nativamente
+   * apenas quick_reply (mapeado pra interactive.type="button" com type:"reply").
+   * Outros native_flow names (cta_url, cta_copy, etc) são melhor servidos pelos
+   * endpoints dedicados (sendButtons com type:"url" / "copy" / "call").
+   *
+   * Quando receber buttons mistos, filtra apenas quick_reply. Se não houver
+   * nenhum quick_reply, throw pro caller degradar.
+   */
+  public async interactiveMessage(data: SendInteractiveDto) {
+    const quickReplies = data.buttons.filter((b) => b.name === 'quick_reply');
+    if (quickReplies.length === 0) {
+      throw new BadRequestException(
+        'Cloud API interactive native_flow aceita apenas quick_reply. ' +
+          'Pra cta_url/cta_copy/cta_call use /sendButtons com type correspondente.',
+      );
+    }
+
+    const content: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: data.body },
+        action: {
+          buttons: quickReplies.map((b) => ({
+            type: 'reply',
+            reply: {
+              id: b.parameters.id ?? b.parameters.display_text,
+              title: b.parameters.display_text,
+            },
+          })),
+        },
+      },
+    };
+    if (data.header) content.interactive.header = { type: 'text', text: data.header };
+    if (data.footer) content.interactive.footer = { text: data.footer };
+    return await (this as any).post(content, 'messages');
   }
 }

@@ -7,6 +7,7 @@ import {
   SendCatalogDto,
   SendContactDto,
   SendFlowDto,
+  SendInteractiveDto,
   SendListDto,
   SendLocationDto,
   SendLocationRequestDto,
@@ -142,5 +143,9 @@ export class SendMessageController {
 
   public async sendCarousel({ instanceName }: InstanceDto, data: SendCarouselDto) {
     return await this.waMonitor.waInstances[instanceName].carouselMessage(data);
+  }
+
+  public async sendInteractive({ instanceName }: InstanceDto, data: SendInteractiveDto) {
+    return await this.waMonitor.waInstances[instanceName].interactiveMessage(data);
   }
 }

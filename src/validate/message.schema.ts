@@ -576,11 +576,12 @@ export const carouselMessageSchema: JSONSchema7 = {
             items: {
               type: 'object',
               properties: {
-                type: { type: 'string', enum: ['quick_reply', 'url', 'call'] },
+                type: { type: 'string', enum: ['quick_reply', 'url', 'call', 'copy', 'catalog', 'webview'] },
                 id: { type: 'string' },
                 label: { type: 'string' },
                 url: { type: 'string' },
                 phone: { type: 'string' },
+                copyCode: { type: 'string' },
               },
               required: ['type', 'label'],
             },
@@ -591,4 +592,52 @@ export const carouselMessageSchema: JSONSchema7 = {
     },
   },
   required: ['number', 'cards'],
+};
+
+export const interactiveMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    body: { type: 'string' },
+    footer: { type: 'string' },
+    header: { type: 'string' },
+    headerMedia: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['image', 'video', 'document'] },
+        url: { type: 'string' },
+      },
+      required: ['type', 'url'],
+    },
+    buttons: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            enum: [
+              'quick_reply',
+              'cta_url',
+              'cta_copy',
+              'cta_call',
+              'cta_reminder',
+              'cta_cancel_reminder',
+              'cta_catalog',
+              'single_select',
+              'address_message',
+              'send_location',
+              'open_webview',
+            ],
+          },
+          parameters: { type: 'object' },
+        },
+        required: ['name', 'parameters'],
+      },
+    },
+  },
+  required: ['number', 'body', 'buttons'],
 };

@@ -7,6 +7,7 @@ import {
   SendCatalogDto,
   SendContactDto,
   SendFlowDto,
+  SendInteractiveDto,
   SendListDto,
   SendLocationDto,
   SendLocationRequestDto,
@@ -30,6 +31,7 @@ import {
   catalogMessageSchema,
   contactMessageSchema,
   flowMessageSchema,
+  interactiveMessageSchema,
   listMessageSchema,
   locationMessageSchema,
   locationRequestMessageSchema,
@@ -257,6 +259,15 @@ export class MessageRouter extends RouterBroker {
           schema: carouselMessageSchema,
           ClassRef: SendCarouselDto,
           execute: (instance, data) => sendMessageController.sendCarousel(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendInteractive'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendInteractiveDto>({
+          request: req,
+          schema: interactiveMessageSchema,
+          ClassRef: SendInteractiveDto,
+          execute: (instance, data) => sendMessageController.sendInteractive(instance, data),
         });
         return res.status(HttpStatus.CREATED).json(response);
       });

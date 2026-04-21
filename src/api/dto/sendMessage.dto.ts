@@ -240,11 +240,12 @@ export class SendAddressRequestDto extends Metadata {
 }
 
 export class CarouselCardButton {
-  type: 'quick_reply' | 'url' | 'call';
+  type: 'quick_reply' | 'url' | 'call' | 'copy' | 'catalog' | 'webview';
   id?: string;
   label: string;
   url?: string;
   phone?: string;
+  copyCode?: string;
 }
 export class CarouselCard {
   imageUrl?: string;
@@ -254,4 +255,33 @@ export class CarouselCard {
 }
 export class SendCarouselDto extends Metadata {
   cards: CarouselCard[];
+}
+
+/**
+ * SEND_INTERACTIVE — native_flow buttons via Baileys binary nodes (11 types).
+ * buttons[] tem shape { name, parameters } alinhado com WhatsApp Web internal
+ * payload. Cloud API mapeia apenas quick_reply + cta_url → interactive.type=button.
+ */
+export class NativeFlowButtonDto {
+  name:
+    | 'quick_reply'
+    | 'cta_url'
+    | 'cta_copy'
+    | 'cta_call'
+    | 'cta_reminder'
+    | 'cta_cancel_reminder'
+    | 'cta_catalog'
+    | 'single_select'
+    | 'address_message'
+    | 'send_location'
+    | 'open_webview';
+  parameters: Record<string, any>;
+}
+
+export class SendInteractiveDto extends Metadata {
+  body: string;
+  footer?: string;
+  header?: string;
+  headerMedia?: { type: 'image' | 'video' | 'document'; url: string };
+  buttons: NativeFlowButtonDto[];
 }
