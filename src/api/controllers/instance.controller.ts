@@ -324,6 +324,7 @@ export class InstanceController {
 
           // Garante que a Instance está no Postgres com o mesmo instanceId
           // que já foi atribuído em memória (linha 53 do createInstance).
+          const metaToken = (instanceData as any).token ?? null;
           await this.prismaRepository.instance.upsert({
             where: { name: instanceData.instanceName },
             create: {
@@ -332,7 +333,7 @@ export class InstanceController {
               connectionStatus: 'open',
               number: instanceData.number,
               integration: Integration.WHATSAPP_BUSINESS,
-              token: (instanceData as any).token ?? null,
+              token: metaToken,
               businessId: instanceData.businessId,
               clientName,
             },
@@ -341,6 +342,8 @@ export class InstanceController {
               number: instanceData.number,
               integration: Integration.WHATSAPP_BUSINESS,
               businessId: instanceData.businessId,
+              token: metaToken,
+              clientName,
             },
           });
 
