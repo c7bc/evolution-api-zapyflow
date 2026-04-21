@@ -447,3 +447,148 @@ export const buttonsMessageSchema: JSONSchema7 = {
   },
   required: ['number'],
 };
+
+// ============================================================================
+// ZAPYFLOW — Cloud-only schemas
+// ============================================================================
+
+export const catalogMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    body: { type: 'string' },
+    footer: { type: 'string' },
+    thumbnailProductRetailerId: { type: 'string' },
+  },
+  required: ['number', 'body'],
+};
+
+export const productListMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    header: { type: 'string' },
+    body: { type: 'string' },
+    footer: { type: 'string' },
+    catalogId: { type: 'string' },
+    sections: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          productIds: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string' },
+          },
+        },
+        required: ['title', 'productIds'],
+      },
+    },
+  },
+  required: ['number', 'header', 'body', 'catalogId', 'sections'],
+};
+
+export const productSingleMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    body: { type: 'string' },
+    footer: { type: 'string' },
+    catalogId: { type: 'string' },
+    productRetailerId: { type: 'string' },
+  },
+  required: ['number', 'body', 'catalogId', 'productRetailerId'],
+};
+
+export const flowMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    header: { type: 'string' },
+    body: { type: 'string' },
+    footer: { type: 'string' },
+    flowId: { type: 'string' },
+    flowToken: { type: 'string' },
+    flowCta: { type: 'string' },
+    flowAction: { type: 'string', enum: ['navigate', 'data_exchange'] },
+    flowActionPayload: {
+      type: 'object',
+      properties: {
+        screen: { type: 'string' },
+        data: { type: 'object' },
+      },
+      required: ['screen'],
+    },
+    mode: { type: 'string', enum: ['draft', 'published'] },
+  },
+  required: ['number', 'body', 'flowId', 'flowToken', 'flowCta', 'flowAction'],
+};
+
+export const locationRequestMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    body: { type: 'string' },
+  },
+  required: ['number', 'body'],
+};
+
+export const addressRequestMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    body: { type: 'string' },
+    country: { type: 'string', enum: ['BR', 'IN'] },
+    values: { type: 'object' },
+  },
+  required: ['number', 'body', 'country'],
+};
+
+export const carouselMessageSchema: JSONSchema7 = {
+  $id: v4(),
+  type: 'object',
+  properties: {
+    number: { ...numberDefinition },
+    cards: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: {
+          imageUrl: { type: 'string' },
+          title: { type: 'string' },
+          body: { type: 'string' },
+          buttons: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 3,
+            items: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['quick_reply', 'url', 'call'] },
+                id: { type: 'string' },
+                label: { type: 'string' },
+                url: { type: 'string' },
+                phone: { type: 'string' },
+              },
+              required: ['type', 'label'],
+            },
+          },
+        },
+        required: ['title', 'body', 'buttons'],
+      },
+    },
+  },
+  required: ['number', 'cards'],
+};

@@ -167,3 +167,91 @@ export class SendReactionDto {
   key: proto.IMessageKey;
   reaction: string;
 }
+
+// ============================================================================
+// ZAPYFLOW — Cloud-only native types (Meta Graph API wrappers). These are
+// available only when the instance integration is WHATSAPP-BUSINESS. Baileys
+// instances return 400 so the caller can degrade (ZapyFlow falls back to
+// numbered text via renderInteractiveAsText).
+// ============================================================================
+
+export class SendCatalogDto extends Metadata {
+  body: string;
+  footer?: string;
+  thumbnailProductRetailerId?: string;
+}
+
+export class ProductSection {
+  title: string;
+  productIds: string[];
+}
+export class SendProductListDto extends Metadata {
+  header: string;
+  body: string;
+  footer?: string;
+  catalogId: string;
+  sections: ProductSection[];
+}
+
+export class SendProductSingleDto extends Metadata {
+  body: string;
+  footer?: string;
+  catalogId: string;
+  productRetailerId: string;
+}
+
+export class FlowActionPayload {
+  screen: string;
+  data?: Record<string, unknown>;
+}
+export class SendFlowDto extends Metadata {
+  header?: string;
+  body: string;
+  footer?: string;
+  flowId: string;
+  flowToken: string;
+  flowCta: string;
+  flowAction: 'navigate' | 'data_exchange';
+  flowActionPayload?: FlowActionPayload;
+  mode?: 'draft' | 'published';
+}
+
+export class SendLocationRequestDto extends Metadata {
+  body: string;
+}
+
+export class AddressValues {
+  name?: string;
+  phone_number?: string;
+  in_pin_code?: string;
+  house_number?: string;
+  floor_number?: string;
+  tower_number?: string;
+  building_name?: string;
+  address?: string;
+  landmark_area?: string;
+  city?: string;
+  state?: string;
+}
+export class SendAddressRequestDto extends Metadata {
+  body: string;
+  country: 'BR' | 'IN';
+  values?: AddressValues;
+}
+
+export class CarouselCardButton {
+  type: 'quick_reply' | 'url' | 'call';
+  id?: string;
+  label: string;
+  url?: string;
+  phone?: string;
+}
+export class CarouselCard {
+  imageUrl?: string;
+  title: string;
+  body: string;
+  buttons: CarouselCardButton[];
+}
+export class SendCarouselDto extends Metadata {
+  cards: CarouselCard[];
+}

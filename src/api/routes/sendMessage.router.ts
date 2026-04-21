@@ -1,12 +1,19 @@
 import { RouterBroker } from '@api/abstract/abstract.router';
 import {
+  SendAddressRequestDto,
   SendAudioDto,
   SendButtonsDto,
+  SendCarouselDto,
+  SendCatalogDto,
   SendContactDto,
+  SendFlowDto,
   SendListDto,
   SendLocationDto,
+  SendLocationRequestDto,
   SendMediaDto,
   SendPollDto,
+  SendProductListDto,
+  SendProductSingleDto,
   SendPtvDto,
   SendReactionDto,
   SendStatusDto,
@@ -16,13 +23,20 @@ import {
 } from '@api/dto/sendMessage.dto';
 import { sendMessageController } from '@api/server.module';
 import {
+  addressRequestMessageSchema,
   audioMessageSchema,
   buttonsMessageSchema,
+  carouselMessageSchema,
+  catalogMessageSchema,
   contactMessageSchema,
+  flowMessageSchema,
   listMessageSchema,
   locationMessageSchema,
+  locationRequestMessageSchema,
   mediaMessageSchema,
   pollMessageSchema,
+  productListMessageSchema,
+  productSingleMessageSchema,
   ptvMessageSchema,
   reactionMessageSchema,
   statusMessageSchema,
@@ -180,6 +194,70 @@ export class MessageRouter extends RouterBroker {
           execute: (instance, data) => sendMessageController.sendButtons(instance, data),
         });
 
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      // ZAPYFLOW — Cloud-only native message types
+      .post(this.routerPath('sendCatalog'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendCatalogDto>({
+          request: req,
+          schema: catalogMessageSchema,
+          ClassRef: SendCatalogDto,
+          execute: (instance, data) => sendMessageController.sendCatalog(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendProductList'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendProductListDto>({
+          request: req,
+          schema: productListMessageSchema,
+          ClassRef: SendProductListDto,
+          execute: (instance, data) => sendMessageController.sendProductList(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendProductSingle'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendProductSingleDto>({
+          request: req,
+          schema: productSingleMessageSchema,
+          ClassRef: SendProductSingleDto,
+          execute: (instance, data) => sendMessageController.sendProductSingle(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendFlow'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendFlowDto>({
+          request: req,
+          schema: flowMessageSchema,
+          ClassRef: SendFlowDto,
+          execute: (instance, data) => sendMessageController.sendFlow(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendLocationRequest'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendLocationRequestDto>({
+          request: req,
+          schema: locationRequestMessageSchema,
+          ClassRef: SendLocationRequestDto,
+          execute: (instance, data) => sendMessageController.sendLocationRequest(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendAddressRequest'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendAddressRequestDto>({
+          request: req,
+          schema: addressRequestMessageSchema,
+          ClassRef: SendAddressRequestDto,
+          execute: (instance, data) => sendMessageController.sendAddressRequest(instance, data),
+        });
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendCarousel'), ...guards, async (req, res) => {
+        const response = await this.dataValidate<SendCarouselDto>({
+          request: req,
+          schema: carouselMessageSchema,
+          ClassRef: SendCarouselDto,
+          execute: (instance, data) => sendMessageController.sendCarousel(instance, data),
+        });
         return res.status(HttpStatus.CREATED).json(response);
       });
   }

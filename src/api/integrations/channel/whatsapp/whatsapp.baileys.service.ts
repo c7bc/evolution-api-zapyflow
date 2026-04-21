@@ -5119,4 +5119,42 @@ export class BaileysStartupService extends ChannelStartupService {
       },
     };
   }
+
+  // ==========================================================================
+  // ZAPYFLOW — Cloud-only types throw so upstream caller can fall back to text.
+  // These all require Meta Cloud API natively; Baileys (WhatsApp Web protocol)
+  // has no equivalent. The error message is intentionally short since
+  // render-baileys-fork.ts catches and degrades to renderInteractiveAsText.
+  // ==========================================================================
+
+  public async catalogMessage(data: any) {
+    void data;
+    throw new BadRequestException('Catalog messages require WhatsApp Cloud API');
+  }
+  public async productListMessage(data: any) {
+    void data;
+    throw new BadRequestException('Product list messages require WhatsApp Cloud API');
+  }
+  public async productSingleMessage(data: any) {
+    void data;
+    throw new BadRequestException('Product single messages require WhatsApp Cloud API');
+  }
+  public async flowMessage(data: any) {
+    void data;
+    throw new BadRequestException('Flow messages require WhatsApp Cloud API');
+  }
+  public async locationRequestMessage(data: any) {
+    void data;
+    throw new BadRequestException('Location request messages require WhatsApp Cloud API');
+  }
+  public async addressRequestMessage(data: any) {
+    void data;
+    throw new BadRequestException('Address request messages require WhatsApp Cloud API');
+  }
+  public async carouselMessage(data: any) {
+    void data;
+    throw new BadRequestException(
+      'Carousel messages require WhatsApp Cloud API (or use /sendCarousel via fork for native_flow)',
+    );
+  }
 }

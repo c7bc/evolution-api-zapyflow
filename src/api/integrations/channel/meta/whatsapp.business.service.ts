@@ -3,12 +3,19 @@ import {
   ContactMessage,
   MediaMessage,
   Options,
+  SendAddressRequestDto,
   SendAudioDto,
   SendButtonsDto,
+  SendCarouselDto,
+  SendCatalogDto,
   SendContactDto,
+  SendFlowDto,
   SendListDto,
   SendLocationDto,
+  SendLocationRequestDto,
   SendMediaDto,
+  SendProductListDto,
+  SendProductSingleDto,
   SendReactionDto,
   SendTemplateDto,
   SendTextDto,
@@ -1795,5 +1802,144 @@ export class BusinessStartupService extends ChannelStartupService {
   }
   public async fakeCall() {
     throw new BadRequestException('Method not available on WhatsApp Business API');
+  }
+
+  // ==========================================================================
+  // ZAPYFLOW — Cloud-only native message types (Meta Graph wrappers)
+  // ==========================================================================
+
+  public async catalogMessage(data: SendCatalogDto) {
+    const content: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'catalog_message',
+        body: { text: data.body },
+        action: {
+          name: 'catalog_message',
+          ...(data.thumbnailProductRetailerId
+            ? { parameters: { thumbnail_product_retailer_id: data.thumbnailProductRetailerId } }
+            : {}),
+        },
+      },
+    };
+    if (data.footer) content.interactive.footer = { text: data.footer };
+    return await (this as any).post(content, 'messages');
+  }
+
+  public async productListMessage(data: SendProductListDto) {
+    const content = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'product_list',
+        header: { type: 'text', text: data.header },
+        body: { text: data.body },
+        ...(data.footer ? { footer: { text: data.footer } } : {}),
+        action: {
+          catalog_id: data.catalogId,
+          sections: data.sections.map((section) => ({
+            title: section.title,
+            product_items: section.productIds.map((id) => ({ product_retailer_id: id })),
+          })),
+        },
+      },
+    };
+    return await (this as any).post(content, 'messages');
+  }
+
+  public async productSingleMessage(data: SendProductSingleDto) {
+    const content = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'product',
+        body: { text: data.body },
+        ...(data.footer ? { footer: { text: data.footer } } : {}),
+        action: {
+          catalog_id: data.catalogId,
+          product_retailer_id: data.productRetailerId,
+        },
+      },
+    };
+    return await (this as any).post(content, 'messages');
+  }
+
+  public async flowMessage(data: SendFlowDto) {
+    const content: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'flow',
+        body: { text: data.body },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+            flow_token: data.flowToken,
+            flow_id: data.flowId,
+            flow_cta: data.flowCta,
+            flow_action: data.flowAction,
+            ...(data.flowActionPayload ? { flow_action_payload: data.flowActionPayload } : {}),
+            mode: data.mode || 'published',
+          },
+        },
+      },
+    };
+    if (data.header) content.interactive.header = { type: 'text', text: data.header };
+    if (data.footer) content.interactive.footer = { text: data.footer };
+    return await (this as any).post(content, 'messages');
+  }
+
+  public async locationRequestMessage(data: SendLocationRequestDto) {
+    const content = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'location_request_message',
+        body: { text: data.body },
+        action: { name: 'send_location' },
+      },
+    };
+    return await (this as any).post(content, 'messages');
+  }
+
+  public async addressRequestMessage(data: SendAddressRequestDto) {
+    const content = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: data.number.replace(/\D/g, ''),
+      type: 'interactive',
+      interactive: {
+        type: 'address_message',
+        body: { text: data.body },
+        action: {
+          name: 'address_message',
+          parameters: {
+            country: data.country,
+            values: data.values || {},
+          },
+        },
+      },
+    };
+    return await (this as any).post(content, 'messages');
+  }
+
+  public async carouselMessage(data: SendCarouselDto) {
+    void data;
+    throw new BadRequestException(
+      'Carousel messages require an approved Meta Carousel Template. ' +
+        'Outside a template, use product_list or product_single. Caller should fall back to numbered text.',
+    );
   }
 }

@@ -1,12 +1,19 @@
 import { InstanceDto } from '@api/dto/instance.dto';
 import {
+  SendAddressRequestDto,
   SendAudioDto,
   SendButtonsDto,
+  SendCarouselDto,
+  SendCatalogDto,
   SendContactDto,
+  SendFlowDto,
   SendListDto,
   SendLocationDto,
+  SendLocationRequestDto,
   SendMediaDto,
   SendPollDto,
+  SendProductListDto,
+  SendProductSingleDto,
   SendPtvDto,
   SendReactionDto,
   SendStatusDto,
@@ -103,5 +110,37 @@ export class SendMessageController {
 
   public async sendStatus({ instanceName }: InstanceDto, data: SendStatusDto, file?: any) {
     return await this.waMonitor.waInstances[instanceName].statusMessage(data, file);
+  }
+
+  // ZAPYFLOW — Cloud-only native types. Each dispatches to the per-channel
+  // service (BusinessStartupService implements natively; BaileysStartupService
+  // throws so the caller can degrade to text fallback).
+
+  public async sendCatalog({ instanceName }: InstanceDto, data: SendCatalogDto) {
+    return await this.waMonitor.waInstances[instanceName].catalogMessage(data);
+  }
+
+  public async sendProductList({ instanceName }: InstanceDto, data: SendProductListDto) {
+    return await this.waMonitor.waInstances[instanceName].productListMessage(data);
+  }
+
+  public async sendProductSingle({ instanceName }: InstanceDto, data: SendProductSingleDto) {
+    return await this.waMonitor.waInstances[instanceName].productSingleMessage(data);
+  }
+
+  public async sendFlow({ instanceName }: InstanceDto, data: SendFlowDto) {
+    return await this.waMonitor.waInstances[instanceName].flowMessage(data);
+  }
+
+  public async sendLocationRequest({ instanceName }: InstanceDto, data: SendLocationRequestDto) {
+    return await this.waMonitor.waInstances[instanceName].locationRequestMessage(data);
+  }
+
+  public async sendAddressRequest({ instanceName }: InstanceDto, data: SendAddressRequestDto) {
+    return await this.waMonitor.waInstances[instanceName].addressRequestMessage(data);
+  }
+
+  public async sendCarousel({ instanceName }: InstanceDto, data: SendCarouselDto) {
+    return await this.waMonitor.waInstances[instanceName].carouselMessage(data);
   }
 }
