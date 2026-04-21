@@ -91,19 +91,30 @@ export class ChatbotController {
       pushName,
       isIntegration,
     };
-    evolutionBotController.emit(emitData);
 
-    typebotController.emit(emitData);
+    // ZapyFlow patch: isolate each chatbot controller so a FK error in one
+    // (e.g. Setting/Webhook not yet populated during Cloud API boot) does not
+    // reject the whole message — upstream bug #2423.
+    const safeEmit = (ctrl: any, name: string) => {
+      try {
+        const result = ctrl.emit(emitData);
+        if (result && typeof result.catch === 'function') {
+          result.catch((err: any) => {
+            this.logger.error(`[chatbot:${name}] emit failed: ${err?.message || err}`);
+          });
+        }
+      } catch (err: any) {
+        this.logger.error(`[chatbot:${name}] emit threw: ${err?.message || err}`);
+      }
+    };
 
-    openaiController.emit(emitData);
-
-    difyController.emit(emitData);
-
-    n8nController.emit(emitData);
-
-    evoaiController.emit(emitData);
-
-    flowiseController.emit(emitData);
+    safeEmit(evolutionBotController, 'evolutionBot');
+    safeEmit(typebotController, 'typebot');
+    safeEmit(openaiController, 'openai');
+    safeEmit(difyController, 'dify');
+    safeEmit(n8nController, 'n8n');
+    safeEmit(evoaiController, 'evoai');
+    safeEmit(flowiseController, 'flowise');
   }
 
   public processDebounce(

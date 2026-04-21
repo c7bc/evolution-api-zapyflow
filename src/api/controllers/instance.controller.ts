@@ -300,6 +300,37 @@ export class InstanceController {
         },
       };
     } catch (error) {
+      // ZapyFlow patch: during WHATSAPP_BUSINESS (Cloud API) boot, the Evolution
+      // ChatbotController pipeline may fire for messages already queued by Meta,
+      // and the dependent tables (Setting, Webhook, IntegrationSession) haven't
+      // been populated yet — causing PrismaClientKnownRequestError P2003 (FK).
+      // The Instance row IS created before the error is thrown, so we accept the
+      // create as successful and let the async pipeline retry harmlessly.
+      // See: https://github.com/EvolutionAPI/evolution-api/issues/2423
+      const isFkViolationDuringCloudBoot =
+        instanceData.integration === Integration.WHATSAPP_BUSINESS &&
+        ((error as any)?.code === 'P2003' ||
+          (isArray(error.message)
+            ? (error.message[0] || '').includes('Foreign key constraint')
+            : (error.message || '').includes('Foreign key constraint')));
+
+      if (isFkViolationDuringCloudBoot) {
+        this.logger.warn(
+          `[zapyflow] Ignoring FK violation during Cloud API instance boot for ${instanceData.instanceName}: ${isArray(error.message) ? error.message[0] : error.message}`,
+        );
+        // Instance is persisted; return a minimal response so the client knows
+        // the create succeeded. Downstream reconciliation happens via webhook.
+        return {
+          instance: {
+            instanceName: instanceData.instanceName,
+            instanceId: instanceData.instanceId,
+            integration: instanceData.integration,
+            status: 'created',
+          },
+          hash: instanceData.token,
+        };
+      }
+
       this.waMonitor.deleteInstance(instanceData.instanceName);
       this.logger.error(isArray(error.message) ? error.message[0] : error.message);
       throw new BadRequestException(isArray(error.message) ? error.message[0] : error.message);

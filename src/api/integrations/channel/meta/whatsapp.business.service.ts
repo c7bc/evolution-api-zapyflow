@@ -135,8 +135,11 @@ export class BusinessStartupService extends ChannelStartupService {
 
       this.phoneNumber = createJid(content.messages ? content.messages[0].from : content.statuses[0]?.recipient_id);
     } catch (error) {
+      // ZapyFlow patch: do not throw here — Meta webhook messages arriving mid-boot
+      // would otherwise fail /instance/create with FK constraint errors (issue #2423).
+      // Messages that fail to process are logged and dropped silently so the instance
+      // finishes initializing.
       this.logger.error(error);
-      throw new InternalServerErrorException(error?.toString());
     }
   }
 
