@@ -43,6 +43,13 @@ export class WAMonitoringService {
   private readonly providerSession: ProviderSession;
 
   public delInstanceTime(instance: string) {
+    // ZAPYFLOW: WHATSAPP-BUSINESS (Cloud API) não abre WebSocket do Baileys,
+    // então connectionStatus.state nunca vira 'open' pelo timer. Se agendarmos
+    // remoção aqui, a instance Cloud vai ser dropada da memória sem motivo.
+    if (this.waInstances[instance]?.integration === Integration.WHATSAPP_BUSINESS) {
+      return;
+    }
+
     const time = this.configService.get<DelInstance>('DEL_INSTANCE');
     if (typeof time === 'number' && time > 0) {
       // Clear previous timeout if exists
@@ -241,24 +248,52 @@ export class WAMonitoringService {
   public async saveInstance(data: any) {
     try {
       const clientName = await this.configService.get<Database>('DATABASE').CONNECTION.CLIENT_NAME;
-      await this.prismaRepository.instance.create({
-        data: {
+      const connectionStatus =
+        data.integration && data.integration === Integration.WHATSAPP_BAILEYS ? 'close' : (data.status ?? 'open');
+      const integration = data.integration || Integration.WHATSAPP_BAILEYS;
+
+      // ZAPYFLOW: upsert by name — se uma tentativa anterior criou com mesmo
+      // name e falhou no meio do fluxo, dava unique constraint (P2002) no
+      // create e o catch silenciava o erro, deixando o DB sem a Instance
+      // e a memória com UUID novo a cada tentativa. Upsert garante estado
+      // consistente: primeira tentativa cria, retries atualizam.
+      await this.prismaRepository.instance.upsert({
+        where: { name: data.instanceName },
+        create: {
           id: data.instanceId,
           name: data.instanceName,
           ownerJid: data.ownerJid,
           profileName: data.profileName,
           profilePicUrl: data.profilePicUrl,
-          connectionStatus:
-            data.integration && data.integration === Integration.WHATSAPP_BAILEYS ? 'close' : (data.status ?? 'open'),
+          connectionStatus,
           number: data.number,
-          integration: data.integration || Integration.WHATSAPP_BAILEYS,
+          integration,
           token: data.hash,
-          clientName: clientName,
+          clientName,
+          businessId: data.businessId,
+        },
+        update: {
+          connectionStatus,
+          ownerJid: data.ownerJid,
+          profileName: data.profileName,
+          profilePicUrl: data.profilePicUrl,
+          number: data.number,
+          integration,
+          token: data.hash,
           businessId: data.businessId,
         },
       });
-    } catch (error) {
-      this.logger.error(error);
+    } catch (error: any) {
+      // ZAPYFLOW: não engolir silenciosamente. Se saveInstance falha, tudo
+      // downstream (Message.create, IntegrationSession.create, etc) vai
+      // quebrar com FK. Melhor crashar aqui com info clara do Prisma.
+      this.logger.error({
+        msg: '[zapyflow] saveInstance upsert failed — rethrowing',
+        code: error?.code,
+        meta: error?.meta,
+        instanceName: data.instanceName,
+      });
+      throw error;
     }
   }
 
