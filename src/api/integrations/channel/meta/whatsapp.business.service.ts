@@ -695,9 +695,22 @@ export class BusinessStartupService extends ChannelStartupService {
         }
 
         if (!this.isMediaMessage(message) && message.type !== 'sticker') {
-          await this.prismaRepository.message.create({
-            data: messageRaw,
-          });
+          // ZAPYFLOW: se Instance não foi reconciliada no Postgres ainda
+          // (race com webhook pending da Meta), a FK vai quebrar. Mensagem
+          // recebida continua processada pelo pipeline de chatbot + webhook
+          // externo; só o histórico local do Evolution fica incompleto.
+          try {
+            await this.prismaRepository.message.create({
+              data: messageRaw,
+            });
+          } catch (dbErr: any) {
+            this.logger.error({
+              msg: '[zapyflow] inbound Message.create failed (non-fatal)',
+              code: dbErr?.code,
+              constraint: dbErr?.meta?.constraint,
+              instanceId: this.instanceId,
+            });
+          }
         }
 
         const contact = await this.prismaRepository.contact.findFirst({
@@ -1166,9 +1179,21 @@ export class BusinessStartupService extends ChannelStartupService {
           pushName: messageRaw.pushName,
         });
 
-      await this.prismaRepository.message.create({
-        data: messageRaw,
-      });
+      // ZAPYFLOW: Meta já aceitou a mensagem e retornou message_id. Uma falha
+      // de persistência no Postgres local do Evolution (FK Instance/IntegrationSession)
+      // é side-effect cosmético — NÃO deve propagar 400 pro cliente.
+      try {
+        await this.prismaRepository.message.create({
+          data: messageRaw,
+        });
+      } catch (dbErr: any) {
+        this.logger.error({
+          msg: '[zapyflow] Message.create failed (non-fatal — Meta delivered)',
+          code: dbErr?.code,
+          constraint: dbErr?.meta?.constraint,
+          instanceId: this.instanceId,
+        });
+      }
 
       return messageRaw;
     } catch (error) {
