@@ -128,6 +128,10 @@ services:
       - 'evolution_instances:/evolution/instances'
     expose:
       - '8080'
+    ports:
+      - '8080:8080'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test:
         - CMD-SHELL

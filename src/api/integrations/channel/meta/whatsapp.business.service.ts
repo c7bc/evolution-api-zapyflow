@@ -200,9 +200,42 @@ export class BusinessStartupService extends ChannelStartupService {
   }
 
   private messageInteractiveJson(received: any) {
+    // ZAPYFLOW patch: normaliza interactive replies pro shape Baileys que os
+    // downstream consumers (ZapyFlow webhook, Chatwoot, etc) esperam. Antes
+    // jogava só o `.title` em `conversation`, perdendo o `.id` estável usado
+    // pra CONDITION match no flow engine.
     const message = received.messages[0];
-    let content: any = { conversation: message.interactive[message.interactive.type].title };
-    message.context ? (content = { ...content, contextInfo: { stanzaId: message.context.id } }) : content;
+    const type = message.interactive?.type;
+    let content: any;
+
+    if (type === 'list_reply' && message.interactive.list_reply) {
+      const lr = message.interactive.list_reply;
+      content = {
+        listResponseMessage: {
+          title: lr.title,
+          description: lr.description,
+          singleSelectReply: { selectedRowId: lr.id },
+        },
+      };
+    } else if (type === 'button_reply' && message.interactive.button_reply) {
+      const br = message.interactive.button_reply;
+      content = {
+        buttonsResponseMessage: {
+          selectedButtonId: br.id,
+          selectedDisplayText: br.title,
+        },
+      };
+    } else {
+      // Fallback legacy (nfm_reply, product_list_reply, etc): preserva
+      // comportamento anterior de jogar title em conversation.
+      content = {
+        conversation: message.interactive?.[type]?.title ?? '',
+      };
+    }
+
+    if (message.context) {
+      content = { ...content, contextInfo: { stanzaId: message.context.id } };
+    }
     return content;
   }
 
@@ -1236,8 +1269,11 @@ export class BusinessStartupService extends ChannelStartupService {
 
       if (isFile === false) {
         if (isURL(mediaMessage.media)) {
+          // ZAPYFLOW patch: responseType='arraybuffer' devolve ArrayBuffer;
+          // Buffer.from(x, 'base64') interpretaria x como string base64 e
+          // corromperia a imagem. Buffer.from(arrayBuffer) preserva os bytes.
           const response = await axios.get(mediaMessage.media, { responseType: 'arraybuffer' });
-          const buffer = Buffer.from(response.data, 'base64');
+          const buffer = Buffer.from(response.data);
           formData.append('file', buffer, {
             filename: mediaMessage.fileName || 'media',
             contentType: mediaMessage.mimetype,
@@ -1302,10 +1338,18 @@ export class BusinessStartupService extends ChannelStartupService {
         gifPlayback: false,
       };
 
+      // ZAPYFLOW patch: sempre faz download+upload via Meta /media endpoint
+      // e envia com image.id (ao invés de image.link). Meta Cloud `link` só
+      // funciona se a URL for HTTPS público acessível pelos servidores do
+      // Meta — URLs internas (host.docker.internal, localhost, IPs privados,
+      // MinIO/S3 sem DNS público) falham silenciosamente. O download local
+      // via getIdMedia resolve em TODOS os casos.
       if (isURL(mediaMessage.media)) {
-        mimetype = mimeTypes.lookup(mediaMessage.media);
-        prepareMedia.id = mediaMessage.media;
-        prepareMedia.type = 'link';
+        mimetype = mimeTypes.lookup(mediaMessage.media) || 'image/png';
+        prepareMedia.mimetype = mimetype;
+        const id = await this.getIdMedia(prepareMedia);
+        prepareMedia.id = id;
+        prepareMedia.type = 'id';
       } else {
         mimetype = mimeTypes.lookup(mediaMessage.fileName);
         const id = await this.getIdMedia(prepareMedia);
@@ -1446,42 +1490,126 @@ export class BusinessStartupService extends ChannelStartupService {
     return audioSent;
   }
 
+  /**
+   * ZAPYFLOW patch: `sendMessageWithTyping` só lia `message['text']` e caía
+   * em "Select" quando o caller mandava body via `description` (que é o que
+   * ZapyFlow faz). Também forçava todo botão pra `type: "reply"`, matando
+   * `type: "url"` (CTA). Agora postamos direto no Meta Graph, replicando o
+   * padrão de `interactiveMessage()` abaixo:
+   *   - replay-only buttons → `interactive.type="button"`
+   *   - 1 url button → `interactive.type="cta_url"`
+   *   - body.text ← description || title || " "
+   *   - footer opcional
+   *   - header image opcional via thumbnailUrl
+   *
+   * Rejeita misturar reply+url (Meta não suporta) e 2+ url (cta_url = 1 btn).
+   */
   public async buttonMessage(data: SendButtonsDto) {
-    const embeddedMedia: any = {};
+    const replyButtons = data.buttons.filter((b) => b.type === 'reply');
+    const urlButtons = data.buttons.filter((b) => b.type === 'url');
 
-    const btnItems = {
-      text: data.buttons.map((btn) => btn.displayText),
-      ids: data.buttons.map((btn) => btn.id),
-    };
-
-    if (!arrayUnique(btnItems.text) || !arrayUnique(btnItems.ids)) {
-      throw new BadRequestException('Button texts cannot be repeated', 'Button IDs cannot be repeated.');
+    if (replyButtons.length > 0 && urlButtons.length > 0) {
+      throw new BadRequestException(
+        'Cloud API não suporta misturar botões reply + url no mesmo interactive. Envie em mensagens separadas.',
+      );
     }
 
-    return await this.sendMessageWithTyping(
-      data.number,
-      {
-        text: !embeddedMedia?.mediaKey ? data.title : undefined,
-        buttons: data.buttons.map((button) => {
-          return {
+    if (urlButtons.length > 1) {
+      throw new BadRequestException('Meta Cloud cta_url aceita exatamente 1 botão URL. Divida em mensagens separadas.');
+    }
+
+    if (replyButtons.length > 0) {
+      const texts = replyButtons.map((b) => b.displayText);
+      const ids = replyButtons.map((b) => b.id);
+      if (!arrayUnique(texts) || !arrayUnique(ids)) {
+        throw new BadRequestException('Button texts cannot be repeated', 'Button IDs cannot be repeated.');
+      }
+    }
+
+    const to = data.number.replace(/\D/g, '');
+    const bodyText = data.description || data.title || ' ';
+
+    let interactive: any;
+    if (urlButtons.length === 1) {
+      const btn = urlButtons[0];
+      interactive = {
+        type: 'cta_url',
+        body: { text: bodyText },
+        action: {
+          name: 'cta_url',
+          parameters: {
+            display_text: (btn.displayText || 'Abrir').slice(0, 20),
+            url: btn.url,
+          },
+        },
+      };
+    } else {
+      interactive = {
+        type: 'button',
+        body: { text: bodyText },
+        action: {
+          buttons: replyButtons.slice(0, 3).map((b) => ({
             type: 'reply',
             reply: {
-              title: button.displayText,
-              id: button.id,
+              id: b.id,
+              title: (b.displayText || '').slice(0, 20),
             },
-          };
-        }),
-        [embeddedMedia?.mediaKey]: embeddedMedia?.message,
-      },
-      {
-        delay: data?.delay,
-        presence: 'composing',
-        quoted: data?.quoted,
-        linkPreview: data?.linkPreview,
-        mentionsEveryOne: data?.mentionsEveryOne,
-        mentioned: data?.mentioned,
-      },
-    );
+          })),
+        },
+      };
+    }
+
+    if (data.footer) interactive.footer = { text: data.footer };
+    if (data.thumbnailUrl) {
+      interactive.header = { type: 'image', image: { link: data.thumbnailUrl } };
+    }
+
+    const content = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive,
+    };
+
+    const result = await (this as any).post(content, 'messages');
+    if (result?.error || !result?.messages?.[0]?.id) {
+      this.logger.error({ msg: '[buttonMessage] Meta returned error', response: result });
+      return result;
+    }
+
+    const messageId = result.messages[0].id;
+    const remoteJid = createJid(data.number);
+
+    // Webhook emit + chatwoot + prisma persist pra manter consistência com
+    // sendMessageWithTyping. Ignora falhas de persistência (Meta já aceitou).
+    const messageRaw: any = {
+      key: { fromMe: true, id: messageId, remoteJid },
+      message: { interactive },
+      messageType: 'interactiveMessage',
+      messageTimestamp: Math.round(new Date().getTime() / 1000),
+      instanceId: this.instanceId,
+      status: 'PENDING',
+      source: 'unknown',
+    };
+
+    try {
+      this.sendDataWebhook(Events.SEND_MESSAGE, messageRaw);
+    } catch {
+      // webhook best-effort
+    }
+
+    try {
+      await this.prismaRepository.message.create({ data: messageRaw });
+    } catch (dbErr: any) {
+      this.logger.error({
+        msg: '[zapyflow] buttonMessage prisma.create failed (non-fatal)',
+        code: dbErr?.code,
+        instanceId: this.instanceId,
+      });
+    }
+
+    return { key: { fromMe: true, id: messageId, remoteJid } };
   }
 
   public async locationMessage(data: SendLocationDto) {
