@@ -31,8 +31,10 @@ const bucketName = BUCKET.BUCKET_NAME;
 const bucketExists = async () => {
   if (minioClient) {
     try {
-      const list = await minioClient.listBuckets();
-      return list.find((bucket) => bucket.name === bucketName);
+      // HEAD bucket — só precisa de s3:ListBucket no bucket específico,
+      // não s3:ListAllMyBuckets (que é uma permission a mais e a maioria
+      // dos IAM users não tem).
+      return await minioClient.bucketExists(bucketName);
     } catch {
       return false;
     }
