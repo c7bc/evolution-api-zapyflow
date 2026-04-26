@@ -12,12 +12,9 @@ services:
       - evolution-postgres
     volumes:
       - evolution_instances:/evolution/instances
-    networks:
-      - evolution-net
     env_file:
       - .env
     environment:
-      # URIs internas montadas a partir das vars burras do .env
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@evolution-postgres:5432/${POSTGRES_DATABASE}
       CACHE_REDIS_URI: redis://evolution-redis:6379
@@ -33,7 +30,7 @@ services:
     volumes:
       - evolution_redis:/data
     networks:
-      evolution-net:
+      default:
         aliases:
           - evolution-redis
     expose:
@@ -57,8 +54,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - evolution-net
     expose:
       - "5432"
 
@@ -66,8 +61,3 @@ volumes:
   evolution_instances:
   evolution_redis:
   postgres_data:
-
-networks:
-  evolution-net:
-    name: evolution-net
-    driver: bridge
