@@ -17,7 +17,7 @@ services:
     environment:
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@evolution-postgres:5432/${POSTGRES_DATABASE}
-      CACHE_REDIS_URI: redis://evolution-redis:6379
+      CACHE_REDIS_URI: redis://redis:6379
     expose:
       - "8080"
 
@@ -29,10 +29,6 @@ services:
       redis-server --port 6379 --appendonly yes
     volumes:
       - evolution_redis:/data
-    networks:
-      default:
-        aliases:
-          - evolution-redis
     expose:
       - "6379"
 
