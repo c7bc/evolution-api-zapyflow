@@ -115,6 +115,7 @@ export class Metadata extends OptionsMessage {
 export class SendPresenceDto extends Metadata {
   presence: WAPresence;
   delay: number;
+  messageId?: string;
 }
 
 export class UpdateMessageDto extends Metadata {

@@ -170,6 +170,7 @@ export const presenceSchema: JSONSchema7 = {
       type: 'string',
       enum: ['unavailable', 'available', 'composing', 'recording', 'paused'],
     },
+    messageId: { type: 'string' },
   },
   required: ['number', 'presence', 'delay'],
 };

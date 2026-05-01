@@ -1,4 +1,4 @@
-import { NumberBusiness } from '@api/dto/chat.dto';
+import { NumberBusiness, SendPresenceDto } from '@api/dto/chat.dto';
 import {
   ContactMessage,
   MediaMessage,
@@ -1839,8 +1839,39 @@ export class BusinessStartupService extends ChannelStartupService {
   public async offerCall() {
     throw new BadRequestException('Method not available on WhatsApp Business API');
   }
-  public async sendPresence() {
-    throw new BadRequestException('Method not available on WhatsApp Business API');
+  public async sendPresence(data: SendPresenceDto) {
+    if (data.presence !== 'composing') {
+      return {
+        presence: data.presence,
+        typingIndicator: false,
+        reason: 'unsupported_presence_for_cloud_api',
+      };
+    }
+
+    if (!data.messageId) {
+      return {
+        presence: data.presence,
+        typingIndicator: false,
+        reason: 'message_id_required_for_cloud_api',
+      };
+    }
+
+    const content = {
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: data.messageId,
+      typing_indicator: {
+        type: 'text',
+      },
+    };
+
+    const result = await this.post(content, 'messages');
+
+    return {
+      presence: data.presence,
+      typingIndicator: true,
+      result,
+    };
   }
   public async setPresence() {
     throw new BadRequestException('Method not available on WhatsApp Business API');
