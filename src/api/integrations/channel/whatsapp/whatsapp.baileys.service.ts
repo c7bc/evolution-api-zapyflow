@@ -323,6 +323,41 @@ export class BaileysStartupService extends ChannelStartupService {
     return this.instance.profilePictureUrl;
   }
 
+  private shouldReconnectAfterDisconnect(statusCode?: number) {
+    const codesToNotReconnect = [DisconnectReason.loggedOut, DisconnectReason.forbidden, 402, 406];
+    return !statusCode || !codesToNotReconnect.includes(statusCode);
+  }
+
+  private disconnectReasonName(statusCode?: number) {
+    if (!statusCode) return undefined;
+    const match = Object.entries(DisconnectReason).find(([, value]) => value === statusCode);
+    return match?.[0];
+  }
+
+  private buildDisconnectMetadata(
+    lastDisconnect: Partial<ConnectionState>['lastDisconnect'],
+    statusCode?: number,
+  ): Partial<wa.StateConnection> {
+    if (!lastDisconnect && (!statusCode || statusCode === 200)) return {};
+
+    const error = lastDisconnect?.error as Boom | Error | undefined;
+    const boomStatusCode = (error as Boom)?.output?.statusCode;
+    const reasonCode = statusCode ?? boomStatusCode;
+
+    return {
+      disconnectReasonCode: reasonCode,
+      disconnectReason: this.disconnectReasonName(reasonCode),
+      disconnectMessage: error?.message,
+      shouldReconnect: this.shouldReconnectAfterDisconnect(reasonCode),
+      lastDisconnect: {
+        errorName: error?.name,
+        errorMessage: error?.message,
+        statusCode: reasonCode,
+        date: lastDisconnect?.date instanceof Date ? lastDisconnect.date.toISOString() : undefined,
+      },
+    };
+  }
+
   public get qrCode(): wa.QrCode {
     return {
       pairingCode: this.instance.qrcode?.pairingCode,
@@ -418,16 +453,17 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     if (connection) {
+      const statusReason = (lastDisconnect?.error as Boom)?.output?.statusCode ?? 200;
       this.stateConnection = {
         state: connection,
-        statusReason: (lastDisconnect?.error as Boom)?.output?.statusCode ?? 200,
+        statusReason,
+        ...this.buildDisconnectMetadata(lastDisconnect, statusReason),
       };
     }
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const codesToNotReconnect = [DisconnectReason.loggedOut, DisconnectReason.forbidden, 402, 406];
-      const shouldReconnect = !codesToNotReconnect.includes(statusCode);
+      const shouldReconnect = this.shouldReconnectAfterDisconnect(statusCode);
       if (shouldReconnect) {
         await this.connectToWhatsapp(this.phoneNumber);
       } else {

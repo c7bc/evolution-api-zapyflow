@@ -129,6 +129,16 @@ export declare namespace wa {
     instance?: string;
     state?: WAConnectionState | 'refused';
     statusReason?: number;
+    disconnectReasonCode?: number;
+    disconnectReason?: string;
+    disconnectMessage?: string;
+    shouldReconnect?: boolean;
+    lastDisconnect?: {
+      errorName?: string;
+      errorMessage?: string;
+      statusCode?: number;
+      date?: string;
+    };
   };
 
   export type StatusMessage = 'ERROR' | 'PENDING' | 'SERVER_ACK' | 'DELIVERY_ACK' | 'READ' | 'DELETED' | 'PLAYED';
