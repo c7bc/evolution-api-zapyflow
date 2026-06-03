@@ -314,6 +314,15 @@ export type Webhook = {
 export type Pusher = { ENABLED: boolean; GLOBAL?: GlobalPusher; EVENTS: EventsPusher };
 export type ConfigSessionPhone = { CLIENT: string; NAME: string };
 export type QrCode = { LIMIT: number; COLOR: string };
+export type Reconnect = {
+  ENABLED: boolean;
+  BASE_DELAY_MS: number;
+  MAX_DELAY_MS: number;
+  FACTOR: number;
+  MAX_ATTEMPTS: number;
+  JITTER: boolean;
+  TERMINAL_CODES: number[];
+};
 export type Typebot = { ENABLED: boolean; API_VERSION: string; SEND_MEDIA_BASE64: boolean };
 export type Chatwoot = {
   ENABLED: boolean;
@@ -411,6 +420,7 @@ export interface Env {
   PUSHER: Pusher;
   CONFIG_SESSION_PHONE: ConfigSessionPhone;
   QRCODE: QrCode;
+  RECONNECT: Reconnect;
   TYPEBOT: Typebot;
   CHATWOOT: Chatwoot;
   OPENAI: Openai;
@@ -803,6 +813,18 @@ export class ConfigService {
       QRCODE: {
         LIMIT: Number.parseInt(process.env.QRCODE_LIMIT) || 30,
         COLOR: process.env.QRCODE_COLOR || '#198754',
+      },
+      RECONNECT: {
+        ENABLED: process.env?.RECONNECT_ENABLED !== 'false',
+        BASE_DELAY_MS: Number.parseInt(process.env.RECONNECT_BASE_DELAY_MS) || 2000,
+        MAX_DELAY_MS: Number.parseInt(process.env.RECONNECT_MAX_DELAY_MS) || 60000,
+        FACTOR: Number.parseFloat(process.env.RECONNECT_FACTOR) || 2,
+        MAX_ATTEMPTS: Number.parseInt(process.env.RECONNECT_MAX_ATTEMPTS) || 10,
+        JITTER: process.env?.RECONNECT_JITTER !== 'false',
+        TERMINAL_CODES: (process.env.RECONNECT_TERMINAL_CODES || '440,411,500')
+          .split(',')
+          .map((code) => Number.parseInt(code.trim()))
+          .filter((code) => !Number.isNaN(code)),
       },
       TYPEBOT: {
         ENABLED: process.env?.TYPEBOT_ENABLED === 'true',

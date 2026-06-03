@@ -74,6 +74,7 @@ import {
   Openai,
   ProviderSession,
   QrCode,
+  Reconnect,
   S3,
 } from '@config/env.config';
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@exceptions';
@@ -250,6 +251,8 @@ export class BaileysStartupService extends ChannelStartupService {
   private readonly msgRetryCounterCache: CacheStore = new NodeCache();
   private readonly userDevicesCache: CacheStore = new NodeCache({ stdTTL: 300000, useClones: false });
   private endSession = false;
+  private reconnectAttempts = 0;
+  private reconnectTimer?: NodeJS.Timeout;
   private logBaileys = this.configService.get<Log>('LOG').BAILEYS;
   private eventProcessingQueue: Promise<void> = Promise.resolve();
 
@@ -324,8 +327,89 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   private shouldReconnectAfterDisconnect(statusCode?: number) {
-    const codesToNotReconnect = [DisconnectReason.loggedOut, DisconnectReason.forbidden, 402, 406];
-    return !statusCode || !codesToNotReconnect.includes(statusCode);
+    if (!statusCode) return true; // undefined -> transitorio, tenta reconectar
+    const cfg = this.configService.get<Reconnect>('RECONNECT');
+    // 401/403/402/406 sao sempre terminais; 440/411/500 (e outros) via config (reversivel)
+    const alwaysTerminal = [DisconnectReason.loggedOut, DisconnectReason.forbidden, 402, 406];
+    const terminalCodes = new Set<number>([...alwaysTerminal, ...(cfg.TERMINAL_CODES ?? [])]);
+    return !terminalCodes.has(statusCode);
+  }
+
+  private computeBackoffDelay(attempt: number): number {
+    const cfg = this.configService.get<Reconnect>('RECONNECT');
+    const raw = cfg.BASE_DELAY_MS * Math.pow(cfg.FACTOR, attempt);
+    const capped = Math.min(raw, cfg.MAX_DELAY_MS);
+    return cfg.JITTER ? Math.floor(Math.random() * capped) : capped;
+  }
+
+  private async cleanupSocket() {
+    try {
+      this.client?.ws?.close();
+      this.client?.end?.(new Error('reconnect: closing previous socket'));
+    } catch (error) {
+      this.logger.warn(`[reconnect] cleanupSocket error (ignored): ${error?.toString()}`);
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    const cfg = this.configService.get<Reconnect>('RECONNECT');
+    const delayMs = this.computeBackoffDelay(this.reconnectAttempts);
+    this.reconnectAttempts++;
+    this.logger.warn(
+      `[reconnect] instance=${this.instance.name} attempt=${this.reconnectAttempts}/${cfg.MAX_ATTEMPTS} delayMs=${delayMs}`,
+    );
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = undefined;
+      try {
+        await this.cleanupSocket();
+        await this.connectToWhatsapp(this.phoneNumber);
+      } catch (error) {
+        this.logger.error(`[reconnect] failed to reconnect: ${error?.toString()}`);
+      }
+    }, delayMs);
+  }
+
+  private async handleReconnectExhausted(
+    statusCode: number | undefined,
+    lastDisconnect: Partial<ConnectionState>['lastDisconnect'],
+  ) {
+    this.logger.error(
+      `[reconnect] instance=${this.instance.name} exhausted ${this.reconnectAttempts} attempts; needs re-pair (creds preserved)`,
+    );
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+
+    this.stateConnection = {
+      ...this.stateConnection,
+      state: 'close',
+      ...this.buildDisconnectMetadata(lastDisconnect, statusCode),
+    };
+
+    await this.prismaRepository.instance.update({
+      where: { id: this.instanceId },
+      data: {
+        connectionStatus: 'close',
+        disconnectionAt: new Date(),
+        disconnectionReasonCode: statusCode,
+        disconnectionObject: JSON.stringify(lastDisconnect),
+      },
+    });
+
+    this.sendDataWebhook(Events.STATUS_INSTANCE, {
+      instance: this.instance.name,
+      status: 'closed',
+      reason: 'reconnect_attempts_exhausted',
+      disconnectionReasonCode: statusCode,
+      disconnectionAt: new Date(),
+    });
+    this.sendDataWebhook(Events.CONNECTION_UPDATE, { instance: this.instance.name, ...this.stateConnection });
+
+    // NAO emite 'logout.instance' (que limpa creds via monitor.cleaningUp): preserva
+    // o pareamento para reconexao manual via endpoint, ja que o codigo era recuperavel.
+    await this.cleanupSocket();
   }
 
   private disconnectReasonName(statusCode?: number) {
@@ -463,9 +547,12 @@ export class BaileysStartupService extends ChannelStartupService {
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const shouldReconnect = this.shouldReconnectAfterDisconnect(statusCode);
-      if (shouldReconnect) {
-        await this.connectToWhatsapp(this.phoneNumber);
+      const cfg = this.configService.get<Reconnect>('RECONNECT');
+      const shouldReconnect = cfg.ENABLED && this.shouldReconnectAfterDisconnect(statusCode);
+      if (shouldReconnect && this.reconnectAttempts < cfg.MAX_ATTEMPTS) {
+        this.scheduleReconnect();
+      } else if (shouldReconnect) {
+        await this.handleReconnectExhausted(statusCode, lastDisconnect);
       } else {
         this.sendDataWebhook(Events.STATUS_INSTANCE, {
           instance: this.instance.name,
@@ -502,6 +589,11 @@ export class BaileysStartupService extends ChannelStartupService {
     }
 
     if (connection === 'open') {
+      this.reconnectAttempts = 0;
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
+      }
       this.instance.wuid = this.client.user.id.replace(/:\d+/, '');
       try {
         const profilePic = await this.profilePicture(this.instance.wuid);
@@ -690,7 +782,8 @@ export class BaileysStartupService extends ChannelStartupService {
       maxMsgRetryCount: 4,
       fireInitQueries: true,
       connectTimeoutMs: 30_000,
-      keepAliveIntervalMs: 30_000,
+      keepAliveIntervalMs: 25_000,
+      defaultQueryTimeoutMs: 60_000,
       qrTimeout: 45_000,
       emitOwnEvents: false,
       shouldIgnoreJid: (jid) => {
