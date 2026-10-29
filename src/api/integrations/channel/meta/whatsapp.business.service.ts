@@ -40,6 +40,8 @@ import FormData from 'form-data';
 import mimeTypes from 'mime-types';
 import { join } from 'path';
 
+import { assertCloudMessageAccepted, CloudRequestError, postCloudRequest } from './cloud-request';
+
 export class BusinessStartupService extends ChannelStartupService {
   constructor(
     public readonly configService: ConfigService,
@@ -84,16 +86,11 @@ export class BusinessStartupService extends ChannelStartupService {
   }
 
   private async post(message: any, params: string) {
-    try {
-      let urlServer = this.configService.get<WaBusiness>('WA_BUSINESS').URL;
-      const version = this.configService.get<WaBusiness>('WA_BUSINESS').VERSION;
-      urlServer = `${urlServer}/${version}/${this.number}/${params}`;
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` };
-      const result = await axios.post(urlServer, message, { headers });
-      return result.data;
-    } catch (e) {
-      return e.response?.data?.error;
-    }
+    const { URL, VERSION } = this.configService.get<WaBusiness>('WA_BUSINESS');
+    return postCloudRequest(axios.post, `${URL}/${VERSION}/${this.number}/${params}`, message, {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.token}`,
+    });
   }
 
   public async profilePicture(number: string) {
@@ -1184,10 +1181,7 @@ export class BusinessStartupService extends ChannelStartupService {
         }
       })();
 
-      if (messageSent?.error_data || messageSent.message) {
-        this.logger.error(messageSent);
-        return messageSent;
-      }
+      assertCloudMessageAccepted(messageSent);
 
       const messageRaw: any = {
         key: { fromMe: true, id: messageSent?.messages[0]?.id, remoteJid: createJid(number) },
@@ -1238,6 +1232,7 @@ export class BusinessStartupService extends ChannelStartupService {
 
       return messageRaw;
     } catch (error) {
+      if (error instanceof CloudRequestError) throw error;
       this.logger.error(error);
       throw new BadRequestException(error.toString());
     }
